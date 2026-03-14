@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ThermoConvert — Temperature Converter</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:       #0a0e1a;
+      --surface:  #111827;
+      --card:     #161d2e;
+      --border:   #1f2d42;
+      --text:     #e2eaf8;
+      --muted:    #5a7090;
+
+      /* thermal gradient states */
+      --cold:     #38bdf8;
+      --mild:     #34d399;
+      --warm:     #fb923c;
+      --hot:      #f43f5e;
+
+      /* active unit color (JS updates this) */
+      --live:     #38bdf8;
+      --live-bg:  rgba(56,189,248,.08);
+      --live-glow:rgba(56,189,248,.25);
+    }
+
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    html { font-size:16px; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow-x: hidden;
+      padding: 2rem 1rem;
+      position: relative;
+    }
+
+    /* ── ANIMATED BG ── */
+    .bg-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(100px);
+      pointer-events: none;
+      animation: orbDrift 12s ease-in-out infinite;
+    }
+    .orb1 { width:500px;height:500px;top:-150px;left:-150px;background:rgba(56,189,248,.07);animation-delay:0s; }
+    .orb2 { width:400px;height:400px;bottom:-100px;right:-100px;background:rgba(244,63,94,.06);animation-delay:4s; }
+    .orb3 { width:300px;height:300px;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(52,211,153,.05);animation-delay:8s; }
+
+    @keyframes orbDrift {
+      0%,100%{transform:translate(0,0) scale(1);}
+      33%{transform:translate(30px,-20px) scale(1.05);}
+      66%{transform:translate(-20px,30px) scale(.97);}
+    }
+    .orb3 { animation: orbDriftC 12s ease-in-out 8s infinite; }
+    @keyframes orbDriftC {
+      0%,100%{transform:translate(-50%,-50%) scale(1);}
+      50%{transform:translate(calc(-50% + 40px),calc(-50% - 30px)) scale(1.08);}
+    }
+
+    /* grid lines */
+    body::before {
+      content:'';
+      position:fixed;inset:0;
+      background-image:
+        linear-gradient(rgba(56,189,248,.025) 1px,transparent 1px),
+        linear-gradient(90deg,rgba(56,189,248,.025) 1px,transparent 1px);
+      background-size:50px 50px;
+      pointer-events:none;
+    }
+
+    /* ── HEADER ── */
+    header {
+      text-align:center;
+      margin-bottom:2.5rem;
+      animation:fadeDown .8s ease both;
+      position:relative;z-index:1;
+    }
+    @keyframes fadeDown { from{opacity:0;transform:translateY(-20px);}to{opacity:1;transform:translateY(0);} }
+
+    .logo {
+      font-family:'Orbitron',monospace;
+      font-size:clamp(1.8rem,5vw,2.8rem);
+      font-weight:900;
+      letter-spacing:.15em;
+      color:var(--live);
+      text-shadow:0 0 30px var(--live-glow);
+      transition:color .6s, text-shadow .6s;
+    }
+    .logo span { color:var(--text); }
+
+    .tagline {
+      font-size:.85rem;
+      color:var(--muted);
+      letter-spacing:.18em;
+      text-transform:uppercase;
+      margin-top:.4rem;
+    }
+
+    /* ── MAIN CARD ── */
+    .card {
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:24px;
+      padding:2.5rem 2.5rem 2rem;
+      width:100%;
+      max-width:520px;
+      position:relative;
+      z-index:1;
+      box-shadow:0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.03);
+      animation:fadeUp .8s .15s ease both;
+      overflow:hidden;
+    }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(30px);}to{opacity:1;transform:translateY(0);} }
+
+    /* top accent line */
+    .card::before {
+      content:'';
+      position:absolute;top:0;left:0;right:0;height:2px;
+      background:linear-gradient(90deg,transparent,var(--live),transparent);
+      transition:background .6s;
+    }
+
+    /* ── THERMOMETER VISUAL ── */
+    .thermo-wrap {
+      display:flex;
+      justify-content:center;
+      margin-bottom:2rem;
+    }
+
+    .thermo {
+      position:relative;
+      width:48px;height:160px;
+      display:flex;flex-direction:column;align-items:center;
+    }
+
+    .thermo-tube {
+      width:20px;height:130px;
+      background:rgba(255,255,255,.04);
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:10px 10px 0 0;
+      border-bottom:none;
+      position:relative;overflow:hidden;
+    }
+
+    .thermo-fill {
+      position:absolute;bottom:0;left:0;right:0;
+      background:linear-gradient(to top,var(--live),color-mix(in srgb,var(--live) 60%,transparent));
+      border-radius:8px 8px 0 0;
+      transition:height .6s cubic-bezier(.4,0,.2,1), background .6s;
+      height:30%;
+    }
+
+    .thermo-tick {
+      position:absolute;right:-12px;
+      width:8px;height:1px;
+      background:rgba(255,255,255,.15);
+    }
+
+    .thermo-bulb {
+      width:36px;height:36px;
+      border-radius:50%;
+      background:var(--live);
+      box-shadow:0 0 20px var(--live-glow), 0 0 6px var(--live);
+      transition:background .6s, box-shadow .6s;
+      margin-top:-4px;
+    }
+
+    /* mercury line up the tube */
+    .thermo-mercury-line {
+      position:absolute;bottom:36px;left:50%;transform:translateX(-50%);
+      width:8px;
+      background:var(--live);
+      border-radius:4px 4px 0 0;
+      transition:height .6s cubic-bezier(.4,0,.2,1), background .6s;
+      height:30%;
+    }
+
+    /* ── UNIT SELECTOR ── */
+    .unit-selector {
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:.6rem;
+      margin-bottom:1.8rem;
+    }
+
+    .unit-btn {
+      padding:.7rem .5rem;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.03);
+      color:var(--muted);
+      font-family:'DM Sans',sans-serif;
+      font-size:.88rem;
+      font-weight:500;
+      cursor:pointer;
+      transition:all .3s;
+      text-align:center;
+      position:relative;
+      overflow:hidden;
+    }
+    .unit-btn::before {
+      content:'';position:absolute;inset:0;
+      background:var(--live-bg);
+      opacity:0;transition:opacity .3s;
+    }
+    .unit-btn:hover { border-color:color-mix(in srgb,var(--live) 50%,transparent); color:var(--text); }
+    .unit-btn:hover::before { opacity:.5; }
+    .unit-btn.active {
+      border-color:var(--live);
+      color:var(--live);
+      background:var(--live-bg);
+      box-shadow:0 0 16px var(--live-glow);
+    }
+
+    .unit-symbol {
+      font-family:'Orbitron',monospace;
+      font-size:1.2rem;
+      font-weight:700;
+      display:block;
+      margin-bottom:.2rem;
+    }
+    .unit-label { font-size:.7rem; letter-spacing:.06em; }
+
+    /* ── INPUT ── */
+    .input-group {
+      margin-bottom:1.4rem;
+      position:relative;
+    }
+
+    .input-label {
+      font-size:.72rem;
+      letter-spacing:.15em;
+      text-transform:uppercase;
+      color:var(--muted);
+      margin-bottom:.5rem;
+      display:block;
+    }
+
+    .input-wrap {
+      position:relative;
+      display:flex;
+      align-items:center;
+    }
+
+    .temp-input {
+      width:100%;
+      background:rgba(255,255,255,.04);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:1rem 4.5rem 1rem 1.2rem;
+      color:var(--text);
+      font-family:'Orbitron',monospace;
+      font-size:1.5rem;
+      font-weight:700;
+      outline:none;
+      transition:border-color .3s, box-shadow .3s;
+      -moz-appearance:textfield;
+    }
+    .temp-input::-webkit-outer-spin-button,
+    .temp-input::-webkit-inner-spin-button { -webkit-appearance:none; }
+    .temp-input:focus {
+      border-color:var(--live);
+      box-shadow:0 0 0 3px var(--live-bg), 0 0 20px var(--live-glow);
+    }
+    .temp-input.error {
+      border-color:#f43f5e !important;
+      box-shadow:0 0 0 3px rgba(244,63,94,.12) !important;
+      animation:shake .4s ease;
+    }
+    @keyframes shake {
+      0%,100%{transform:translateX(0);}
+      20%{transform:translateX(-6px);}
+      40%{transform:translateX(6px);}
+      60%{transform:translateX(-4px);}
+      80%{transform:translateX(4px);}
+    }
+
+    .input-unit-badge {
+      position:absolute;right:1rem;
+      font-family:'Orbitron',monospace;
+      font-size:.9rem;
+      font-weight:700;
+      color:var(--live);
+      transition:color .6s;
+      pointer-events:none;
+    }
+
+    .error-msg {
+      font-size:.75rem;
+      color:#f43f5e;
+      margin-top:.4rem;
+      display:none;
+      animation:fadeUp .3s ease;
+    }
+    .error-msg.show { display:block; }
+
+    /* ── CONVERT BUTTON ── */
+    .convert-btn {
+      width:100%;
+      padding:1rem;
+      border-radius:12px;
+      background:linear-gradient(135deg,var(--live),color-mix(in srgb,var(--live) 70%,#000));
+      border:none;
+      color:#0a0e1a;
+      font-family:'Orbitron',monospace;
+      font-size:.9rem;
+      font-weight:700;
+      letter-spacing:.12em;
+      cursor:pointer;
+      transition:all .3s;
+      position:relative;overflow:hidden;
+      margin-bottom:2rem;
+    }
+    .convert-btn::before {
+      content:'';position:absolute;inset:0;
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);
+      transform:translateX(-100%);transition:transform .5s;
+    }
+    .convert-btn:hover { transform:translateY(-2px); box-shadow:0 10px 30px var(--live-glow); }
+    .convert-btn:hover::before { transform:translateX(100%); }
+    .convert-btn:active { transform:translateY(0) scale(.98); }
+
+    /* ── RESULTS ── */
+    .results {
+      display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem;
+    }
+
+    .result-card {
+      background:rgba(255,255,255,.03);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:1.1rem .8rem;
+      text-align:center;
+      transition:all .4s;
+      position:relative;overflow:hidden;
+    }
+    .result-card.active-result {
+      border-color:var(--live);
+      background:var(--live-bg);
+    }
+    .result-card.pop {
+      animation:resultPop .5s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes resultPop {
+      0%{transform:scale(.9);opacity:.4;}
+      100%{transform:scale(1);opacity:1;}
+    }
+
+    .result-unit {
+      font-family:'Orbitron',monospace;
+      font-size:.68rem;
+      font-weight:700;
+      letter-spacing:.15em;
+      color:var(--muted);
+      margin-bottom:.4rem;
+      text-transform:uppercase;
+    }
+    .result-value {
+      font-family:'Orbitron',monospace;
+      font-size:1.4rem;
+      font-weight:900;
+      color:var(--text);
+      line-height:1.1;
+      transition:color .4s;
+      word-break:break-all;
+    }
+    .result-card.active-result .result-value { color:var(--live); }
+    .result-symbol {
+      font-size:.75rem;
+      color:var(--muted);
+      margin-top:.3rem;
+    }
+
+    /* copy toast */
+    .result-card:hover { cursor:pointer; border-color:color-mix(in srgb,var(--live) 40%,transparent); }
+    .copy-toast {
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      background:rgba(10,14,26,.85);border-radius:14px;
+      font-size:.75rem;font-weight:600;color:var(--live);
+      opacity:0;pointer-events:none;transition:opacity .2s;
+      font-family:'DM Sans',sans-serif;
+    }
+    .result-card:hover .copy-toast { opacity:1; }
+
+    /* ── TEMP DESCRIPTION BAR ── */
+    .temp-vibe {
+      margin-top:1.4rem;
+      background:rgba(255,255,255,.025);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:.9rem 1.2rem;
+      display:flex;align-items:center;gap:.9rem;
+      animation:fadeUp .4s ease both;
+      transition:all .4s;
+    }
+    .vibe-icon { font-size:1.6rem; flex-shrink:0; }
+    .vibe-text { font-size:.82rem; color:var(--muted); line-height:1.5; }
+    .vibe-text strong { color:var(--text); }
+
+    /* ── FORMULA NOTE ── */
+    .formula-strip {
+      display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem;
+    }
+    .formula-pill {
+      font-size:.72rem;font-family:'Orbitron',monospace;
+      background:rgba(255,255,255,.03);border:1px solid var(--border);
+      border-radius:6px;padding:.3rem .7rem;color:var(--muted);letter-spacing:.04em;
+      transition:all .3s;
+    }
+    .formula-pill:hover { border-color:var(--live);color:var(--live); }
+
+    /* ── FOOTER ── */
+    footer {
+      margin-top:2rem;text-align:center;
+      position:relative;z-index:1;
+      animation:fadeUp .8s .4s ease both;
+    }
+    footer p { font-size:.75rem;color:var(--muted);letter-spacing:.08em; }
+    footer span { color:var(--live);transition:color .6s; }
+
+    /* ── RESPONSIVE ── */
+    @media(max-width:480px) {
+      .card { padding:1.8rem 1.4rem 1.5rem; }
+      .results { grid-template-columns:repeat(3,1fr); gap:.5rem; }
+      .result-value { font-size:1.1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="bg-orb orb1"></div>
+  <div class="bg-orb orb2"></div>
+  <div class="bg-orb orb3"></div>
+
+  <!-- HEADER -->
+  <header>
+    <h1 class="logo">THERMO<span>CONVERT</span></h1>
+    <p class="tagline">Celsius · Fahrenheit · Kelvin</p>
+  </header>
+
+  <!-- MAIN CARD -->
+  <div class="card">
+
+    <!-- Thermometer visual -->
+    <div class="thermo-wrap">
+      <div class="thermo">
+        <div class="thermo-tube" id="thermoTube">
+          <div class="thermo-fill" id="thermoFill"></div>
+          <div class="thermo-tick" style="bottom:75%"></div>
+          <div class="thermo-tick" style="bottom:50%"></div>
+          <div class="thermo-tick" style="bottom:25%"></div>
+        </div>
+        <div class="thermo-bulb" id="thermoBulb"></div>
+      </div>
+    </div>
+
+    <!-- Unit Selector -->
+    <div class="unit-selector">
+      <button class="unit-btn active" data-unit="C" onclick="selectUnit('C')">
+        <span class="unit-symbol">°C</span>
+        <span class="unit-label">Celsius</span>
+      </button>
+      <button class="unit-btn" data-unit="F" onclick="selectUnit('F')">
+        <span class="unit-symbol">°F</span>
+        <span class="unit-label">Fahrenheit</span>
+      </button>
+      <button class="unit-btn" data-unit="K" onclick="selectUnit('K')">
+        <span class="unit-symbol">K</span>
+        <span class="unit-label">Kelvin</span>
+      </button>
+    </div>
+
+    <!-- Input -->
+    <div class="input-group">
+      <label class="input-label" for="tempInput">Enter Temperature</label>
+      <div class="input-wrap">
+        <input
+          class="temp-input"
+          id="tempInput"
+          type="number"
+          placeholder="0"
+          step="any"
+          oninput="onInputChange()"
+          onkeydown="if(event.key==='Enter')convert()"
+        />
+        <span class="input-unit-badge" id="inputBadge">°C</span>
+      </div>
+      <p class="error-msg" id="errorMsg">⚠ Please enter a valid number</p>
+    </div>
+
+    <!-- Convert Button -->
+    <button class="convert-btn" onclick="convert()">
+      ⟳ &nbsp;CONVERT
+    </button>
+
+    <!-- Results -->
+    <div class="results">
+      <div class="result-card" id="res-C" onclick="copyVal('C')">
+        <div class="result-unit">Celsius</div>
+        <div class="result-value" id="val-C">—</div>
+        <div class="result-symbol">°C</div>
+        <div class="copy-toast">📋 Copy</div>
+      </div>
+      <div class="result-card" id="res-F" onclick="copyVal('F')">
+        <div class="result-unit">Fahrenheit</div>
+        <div class="result-value" id="val-F">—</div>
+        <div class="result-symbol">°F</div>
+        <div class="copy-toast">📋 Copy</div>
+      </div>
+      <div class="result-card" id="res-K" onclick="copyVal('K')">
+        <div class="result-unit">Kelvin</div>
+        <div class="result-value" id="val-K">—</div>
+        <div class="result-symbol">K</div>
+        <div class="copy-toast">📋 Copy</div>
+      </div>
+    </div>
+
+    <!-- Temperature Vibe -->
+    <div class="temp-vibe" id="vibeBox" style="display:none;">
+      <span class="vibe-icon" id="vibeIcon">🌡️</span>
+      <div class="vibe-text" id="vibeText"></div>
+    </div>
+
+    <!-- Formula pills -->
+    <div class="formula-strip">
+      <span class="formula-pill">°F = (°C × 9/5) + 32</span>
+      <span class="formula-pill">K = °C + 273.15</span>
+      <span class="formula-pill">°C = (°F − 32) × 5/9</span>
+    </div>
+  </div>
+
+  <footer>
+    <p>Made with ♥ &nbsp;·&nbsp; All conversions are <span id="footerAccent">precise to 4 decimal places</span></p>
+  </footer>
+
+  <script>
+    // ── STATE ──
+    let activeUnit = 'C';
+    let lastCelsius = null;
+
+    // Colour palette per thermal zone
+    const zones = [
+      { max:-50,  color:'#818cf8', bg:'rgba(129,140,248,.08)', glow:'rgba(129,140,248,.25)', icon:'🥶', label:'Extreme freeze — colder than dry ice! Brrr.' },
+      { max:0,    color:'#38bdf8', bg:'rgba(56,189,248,.08)',  glow:'rgba(56,189,248,.25)',  icon:'❄️', label:'Freezing — water turns to ice at this temperature.' },
+      { max:15,   color:'#34d399', bg:'rgba(52,211,153,.08)',  glow:'rgba(52,211,153,.25)',  icon:'🌥️', label:'Cold — grab a jacket before heading out.' },
+      { max:25,   color:'#a3e635', bg:'rgba(163,230,53,.08)',  glow:'rgba(163,230,53,.25)',  icon:'🌤️', label:'Comfortable — perfect room temperature range.' },
+      { max:35,   color:'#fb923c', bg:'rgba(251,146,60,.08)',  glow:'rgba(251,146,60,.25)',  icon:'☀️', label:'Warm — a lovely summer day.' },
+      { max:50,   color:'#f97316', bg:'rgba(249,115,22,.08)',  glow:'rgba(249,115,22,.25)',  icon:'🔥', label:'Hot — stay hydrated and seek shade.' },
+      { max:1e9,  color:'#f43f5e', bg:'rgba(244,63,94,.08)',   glow:'rgba(244,63,94,.25)',   icon:'💀', label:'Extreme heat — dangerous territory!' },
+    ];
+
+    function getZone(celsius) {
+      return zones.find(z => celsius < z.max) || zones[zones.length-1];
+    }
+
+    // ── UNIT SELECT ──
+    function selectUnit(unit) {
+      activeUnit = unit;
+      document.querySelectorAll('.unit-btn').forEach(b => b.classList.toggle('active', b.dataset.unit === unit));
+      document.getElementById('inputBadge').textContent = unit === 'K' ? 'K' : `°${unit}`;
+      if (lastCelsius !== null) {
+        const v = toCurrent(lastCelsius, unit);
+        document.getElementById('tempInput').value = round4(v);
+      }
+      updateColor(lastCelsius);
+    }
+
+    // ── CONVERSIONS ──
+    function toCelsius(val, from) {
+      if (from === 'C') return val;
+      if (from === 'F') return (val - 32) * 5/9;
+      if (from === 'K') return val - 273.15;
+    }
+    function fromCelsius(c, to) {
+      if (to === 'C') return c;
+      if (to === 'F') return c * 9/5 + 32;
+      if (to === 'K') return c + 273.15;
+    }
+    function toCurrent(celsius, unit) { return fromCelsius(celsius, unit); }
+    function round4(v) { return Math.round(v * 10000) / 10000; }
+
+    // ── INPUT CHANGE ──
+    function onInputChange() {
+      clearError();
+      const raw = document.getElementById('tempInput').value;
+      if (raw === '' || raw === '-') return;
+      const val = parseFloat(raw);
+      if (!isNaN(val)) {
+        const celsius = toCelsius(val, activeUnit);
+        lastCelsius = celsius;
+        updateColor(celsius);
+        updateThermo(celsius);
+      }
+    }
+
+    // ── CONVERT ──
+    function convert() {
+      const raw = document.getElementById('tempInput').value.trim();
+
+      if (raw === '' || isNaN(parseFloat(raw))) {
+        showError();
+        return;
+      }
+
+      const val = parseFloat(raw);
+      const celsius = toCelsius(val, activeUnit);
+      lastCelsius = celsius;
+
+      // Guard: Kelvin can't be negative
+      if (activeUnit === 'K' && val < 0) {
+        showError('⚠ Kelvin cannot be negative (absolute zero = 0 K)');
+        return;
+      }
+
+      const C = round4(celsius);
+      const F = round4(fromCelsius(celsius, 'F'));
+      const K = round4(fromCelsius(celsius, 'K'));
+
+      // Update cards
+      setResult('C', C);
+      setResult('F', F);
+      setResult('K', K);
+
+      // Highlight source card
+      ['C','F','K'].forEach(u => {
+        const el = document.getElementById(`res-${u}`);
+        el.classList.toggle('active-result', u === activeUnit);
+      });
+
+      updateColor(celsius);
+      updateThermo(celsius);
+      updateVibe(celsius);
+    }
+
+    function setResult(unit, val) {
+      const el = document.getElementById(`val-${unit}`);
+      el.textContent = val;
+      const card = document.getElementById(`res-${unit}`);
+      card.classList.remove('pop');
+      void card.offsetWidth; // reflow
+      card.classList.add('pop');
+    }
+
+    // ── COLOUR SYSTEM ──
+    function updateColor(celsius) {
+      if (celsius === null) return;
+      const zone = getZone(celsius);
+      const root = document.documentElement;
+      root.style.setProperty('--live', zone.color);
+      root.style.setProperty('--live-bg', zone.bg);
+      root.style.setProperty('--live-glow', zone.glow);
+    }
+
+    // ── THERMOMETER ──
+    function updateThermo(celsius) {
+      // Map celsius (-80 to 150) → fill height 5% to 95%
+      const pct = Math.min(95, Math.max(5, ((celsius + 80) / 230) * 90 + 5));
+      document.getElementById('thermoFill').style.height = pct + '%';
+    }
+
+    // ── VIBE BOX ──
+    const vibes = [
+      { max:-273.15, icon:'🔬', text:'<strong>Absolute Zero</strong> — the coldest possible temperature. All molecular motion stops.' },
+      { max:-89,     icon:'🥶', text:'<strong>Coldest place on Earth</strong> — Vostok Station, Antarctica record.' },
+      { max:0,       icon:'❄️',  text:'<strong>Freezing point of water</strong> — below this, water turns to ice.' },
+      { max:20,      icon:'🌥️', text:'<strong>Cold weather</strong> — you\'ll want a jacket outside.' },
+      { max:37,      icon:'🌤️', text:'<strong>Comfortable range</strong> — normal human body temperature is 37 °C.' },
+      { max:56,      icon:'☀️',  text:'<strong>Hot</strong> — the hottest air temp ever recorded on Earth was ~56.7 °C.' },
+      { max:100,     icon:'♨️',  text:'<strong>Boiling point of water</strong> — water turns to steam at 100 °C.' },
+      { max:1e9,     icon:'🔥', text:'<strong>Extreme heat</strong> — beyond normal Earth conditions.' },
+    ];
+
+    function updateVibe(celsius) {
+      const box = document.getElementById('vibeBox');
+      const icon = document.getElementById('vibeIcon');
+      const text = document.getElementById('vibeText');
+
+      const match = vibes.find(v => celsius <= v.max) || vibes[vibes.length-1];
+
+      // Special checkpoint messages
+      let special = null;
+      if (Math.abs(celsius - 0) < 0.01)      special = { icon:'❄️',  text:'<strong>Exactly 0 °C</strong> — the freezing/melting point of water!' };
+      if (Math.abs(celsius - 100) < 0.01)    special = { icon:'♨️',  text:'<strong>Exactly 100 °C</strong> — the boiling point of water at sea level!' };
+      if (Math.abs(celsius - 37) < 0.01)     special = { icon:'🫀', text:'<strong>Exactly 37 °C</strong> — average human body temperature!' };
+      if (Math.abs(celsius - (-273.15)) < 0.02) special = { icon:'🔬', text:'<strong>Absolute Zero: 0 K</strong> — the theoretical coldest anything can get!' };
+
+      const use = special || match;
+      icon.textContent = use.icon;
+      text.innerHTML = use.text;
+      box.style.display = 'flex';
+      box.style.animation = 'none';
+      void box.offsetWidth;
+      box.style.animation = 'fadeUp .4s ease both';
+    }
+
+    // ── ERROR ──
+    function showError(msg) {
+      const input = document.getElementById('tempInput');
+      const err = document.getElementById('errorMsg');
+      input.classList.add('error');
+      err.textContent = msg || '⚠ Please enter a valid number';
+      err.classList.add('show');
+      setTimeout(() => input.classList.remove('error'), 600);
+    }
+    function clearError() {
+      document.getElementById('errorMsg').classList.remove('show');
+      document.getElementById('tempInput').classList.remove('error');
+    }
+
+    // ── COPY ──
+    function copyVal(unit) {
+      const txt = document.getElementById(`val-${unit}`).textContent;
+      if (txt === '—') return;
+      const sym = unit === 'K' ? 'K' : `°${unit}`;
+      navigator.clipboard.writeText(txt + ' ' + sym).then(() => {
+        const card = document.getElementById(`res-${unit}`);
+        const toast = card.querySelector('.copy-toast');
+        toast.textContent = '✓ Copied!';
+        setTimeout(() => toast.textContent = '📋 Copy', 1500);
+      });
+    }
+
+    // ── INIT ──
+    updateColor(0);
+    updateThermo(0);
+  </script>
+</body>
+</html>
